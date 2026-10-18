@@ -1,0 +1,40 @@
+import os
+from playwright.sync_api import sync_playwright, expect
+with sync_playwright() as p:
+ b=p.chromium.launch(headless=True,executable_path=os.environ['CHROMIUM_EXECUTABLE'],args=['--no-sandbox'])
+ try:
+  for width,height in [(390,844),(1440,1000)]:
+   page=b.new_page(viewport={'width':width,'height':height},extra_http_headers={'Tailscale-User-Login':'owner@example.test'})
+   page.goto('http://127.0.0.1:18924/#xangiHome=https%3A%2F%2Fxangi.example.test%2F')
+   expect(page.locator('#workspace')).to_be_visible()
+   expect(page.locator('#xangiHome')).to_have_attribute('href','https://xangi.example.test/')
+   assert '#' not in page.url
+   if width < 800: page.locator('#composerView').click()
+   page.locator('#input').fill('現在の場所');page.locator('#refresh').click()
+   expect(page.locator('#commandExplanation')).to_have_text('xangiで確認')
+   pane=page.locator('.composer').bounding_box(); explanation=page.locator('#commandExplanation').bounding_box()
+   assert pane['y'] <= explanation['y'] and explanation['y']+explanation['height'] <= pane['y']+pane['height']+1
+   page.locator('#backendOpen').click()
+   expect(page.locator('#settingsTitle')).to_have_text('設定')
+   expect(page.locator('#backendSelect')).to_have_value('xangi:codex')
+   page.locator('#showExplanation').uncheck()
+   page.screenshot(path=f'/tmp/terminal-settings-{width}.png')
+   page.locator('#backendClose').click()
+   expect(page.locator('#commandExplanation')).to_be_hidden()
+   page.reload();expect(page.locator('#workspace')).to_be_visible()
+   expect(page.locator('#xangiHome')).to_have_attribute('href','https://xangi.example.test/')
+   if width < 800: page.locator('#composerView').click()
+   page.locator('#input').fill('現在の場所')
+   expect(page.locator('#commandInput')).to_have_value('pwd')
+   expect(page.locator('#commandExplanation')).to_be_hidden()
+   page.locator('#backendOpen').click();expect(page.locator('#showExplanation')).not_to_be_checked()
+   page.locator('#showExplanation').check();page.locator('#backendClose').click()
+   expect(page.locator('#commandExplanation')).to_have_text('xangiで確認')
+   page.locator('#commandInput').fill('ls')
+   expect(page.locator('#commandExplanation')).to_be_hidden()
+   assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
+   page.route('https://xangi.example.test/',lambda route:route.fulfill(body='xangi home'))
+   page.locator('#xangiHome').click();expect(page).to_have_url('https://xangi.example.test/')
+   page.close()
+  print('PASS mobile/desktop settings, explanation toggle persistence/stale clearing, home navigation')
+ finally:b.close()

@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 2,
+  "id": "xangi-terminal",
+  "displayName": "xangi-terminal",
+  "description": "自然言語とシェルで操作するターミナルを開く",
+  "version": "0.1.0",
+  "entrypoint": "scripts/xangi-extension",
+  "runtime": {
+    "kind": "managed-http"
+  },
+  "permissions": [
+    "同じ端末のターミナルへ一度限りの接続リンクで接続する"
+  ],
+  "setup": {
+    "instructions": "XANGI_SETUP.md"
+  },
+  "ui": {
+    "capability": "terminal.open",
+    "path": "/"
+  },
+  "capabilities": [
+    {
+      "id": "terminal.open",
+      "protocol": "http",
+      "healthPath": "/health"
+    }
+  ]
+}

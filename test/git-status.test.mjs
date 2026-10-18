@@ -1,0 +1,22 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtemp, writeFile, rm, mkdir } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { gitStatus } from '../src/git-status.mjs';
+test('Git reports staged/unstaged/untracked/rename paths and diffs without changing files', async t => {
+ const root=await mkdtemp(join(tmpdir(),'terminal-git-')); t.after(()=>rm(root,{recursive:true,force:true}));
+ const git=(...args)=>execFileSync('git',['-C',root,...args],{encoding:'utf8'});
+ assert.deepEqual(await gitStatus(root),{repository:false});
+ git('init','-b','main');git('config','user.name','Test');git('config','user.email','test@example.test');
+ await writeFile(join(root,'a'),'original\n');git('add','a');git('commit','-m','initial');
+ git('mv','a','renamed file');await writeFile(join(root,'renamed file'),'changed\n');
+ await writeFile(join(root,'new\nfile'),'untracked');await mkdir(join(root,'sub'));
+ const status=await gitStatus(join(root,'sub'),true);
+ assert.equal(status.branch,'main');assert.equal(status.root,root);assert.equal(status.staged,1);assert.equal(status.modified,1);assert.equal(status.untracked,1);
+ assert.ok(status.files.some(f=>f.path==='renamed file' && f.from==='a'));
+ assert.ok(status.files.some(f=>f.path==='new\nfile'));
+ assert.match(status.diff,/changed/);assert.match(status.stagedDiff,/rename/);
+ git('checkout','--detach');assert.equal((await gitStatus(root)).branch,'(detached)');
+});
