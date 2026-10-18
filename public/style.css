@@ -14,7 +14,7 @@ body.connected{height:var(--app-height,100dvh);display:flex;flex-direction:colum
 
 #backendError{color:var(--error)}#backendModel{overflow-wrap:anywhere}.workbar #backendOpen{max-width:24%}
 
-.home-link{color:var(--ink);font-size:12px;text-decoration:none;min-height:44px;display:inline-flex;align-items:center;padding:4px 8px;border:1px solid var(--line);border-radius:6px;margin-left:auto;white-space:nowrap}#commandExplanation{font-size:13px;overflow-wrap:anywhere}#backendDialog .check{align-items:center}#backendDialog .check input{width:20px;height:20px}#effortSelect{width:100%;min-height:44px;background:var(--field);color:var(--ink);border:1px solid var(--line)}@media(max-width:480px){header{gap:6px}.home-link{font-size:11px;padding:4px}.brand{font-size:13px!important}}
+.home-link{color:var(--ink);font-size:12px;text-decoration:none;min-height:44px;display:inline-flex;align-items:center;padding:4px 8px;border:1px solid var(--line);border-radius:6px;flex-shrink:0;white-space:nowrap}#commandExplanation{font-size:13px;overflow-wrap:anywhere}#backendDialog .check{align-items:center}#backendDialog .check input{width:20px;height:20px}#effortSelect{width:100%;min-height:44px;background:var(--field);color:var(--ink);border:1px solid var(--line)}@media(max-width:480px){header{gap:6px}.home-link{font-size:11px;padding:4px}.brand{font-size:13px!important}}
 
 /* On phones, give each task the full available height, including with the keyboard open. */
 .mobileViews{display:none}
@@ -62,3 +62,19 @@ body.connected{height:var(--app-height,100dvh);display:flex;flex-direction:colum
  body.connected.compact-viewport:not(.input-view) main{padding:4px 8px}
  body.compact-viewport .mobileViews{margin-bottom:2px}
 }
+
+/* Independent terminal tabs reuse the existing dark palette and focus treatment. */
+.terminalTabs{display:flex;gap:6px;flex:0 0 auto;min-width:0;margin-bottom:8px}
+#terminalTabs{display:flex;gap:4px;min-width:0;overflow-x:auto;scroll-padding:4px;padding:3px}
+.terminalTab{display:flex;flex:0 0 auto;max-width:240px;border:1px solid var(--line);border-radius:6px;background:var(--surface)}
+.terminalTab button{border:0;background:transparent;border-radius:4px;min-height:44px}
+.terminalTab [role=tab]{min-width:0;overflow:hidden;text-overflow:ellipsis;padding:6px 10px}
+.terminalTab [aria-selected=true]{color:var(--accent);box-shadow:inset 0 -2px var(--accent)}
+.terminalTab .closeTab{flex:0 0 44px;width:44px;padding:0;color:var(--muted)}
+.terminalTab .closeTab:hover{color:var(--error);background:var(--field)}
+#newTerminal{flex:0 0 44px;padding:0;align-self:center}
+@media(max-width:800px){.terminalTab{max-width:190px}.terminalTabs{margin-bottom:4px}}
+
+/* Align navigation with the centered content and its responsive gutters. */
+body.connected header{padding-inline:max(24px,calc((100% - 1360px)/2 + 24px))}
+@media(max-width:800px){body.connected header{padding-inline:12px}}

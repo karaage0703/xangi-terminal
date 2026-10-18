@@ -1,12 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile, rm, mkdir } from 'node:fs/promises';
+import { mkdtemp, writeFile, rm, mkdir, realpath } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gitStatus } from '../src/git-status.mjs';
 test('Git reports staged/unstaged/untracked/rename paths and diffs without changing files', async t => {
- const root=await mkdtemp(join(tmpdir(),'terminal-git-')); t.after(()=>rm(root,{recursive:true,force:true}));
+ const root=await realpath(await mkdtemp(join(tmpdir(),'terminal-git-'))); t.after(()=>rm(root,{recursive:true,force:true}));
  const git=(...args)=>execFileSync('git',['-C',root,...args],{encoding:'utf8'});
  assert.deepEqual(await gitStatus(root),{repository:false});
  git('init','-b','main');git('config','user.name','Test');git('config','user.email','test@example.test');

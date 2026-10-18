@@ -16,6 +16,8 @@ function homeLink(value) {
   try { const url = new URL(value); if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.pathname !== '/' || url.search || url.hash) return; $('xangiHome').href = url.href; $('xangiHome').hidden = false; remember('terminal-xangi-home', url.href); } catch {}
 }
 homeLink(stored('terminal-xangi-home'));
+const drafts = new Map();
+let terminalList = [];
 let workspaceId = 'default', workspaceVersion = 0, switching = false, gitBusy = false;
 async function api(path, data = {}) {
   const response = await fetch('/api/' + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
@@ -140,19 +142,59 @@ async function loadWorkspaces() {
   let registered = [];
   try { registered = (await (await api('xangi/catalog')).json()).workspaces; }
   catch (e) { $('workspaceSelect').title = e.message; }
-  const options = registered.map(w => {
-    const existing = result.workspaces.find(local => local.path === w.path);
-    const option = new Option(w.name, existing?.id || 'xangi:' + w.id); option.title = w.path; return option;
+  terminalList = result.workspaces;
+  renderTabs();
+  const options = result.workspaces.map((w, index) => {
+    const option = new Option(`${index + 1}: ${w.name}`, w.id); option.title = w.path; return option;
   });
-  for (const w of result.workspaces) if (!registered.some(r => r.path === w.path)) {
-    const option = new Option(w.name, w.id); option.title = w.path; options.push(option);
+  for (const w of registered) if (!result.workspaces.some(local => local.path === w.path)) {
+    const option = new Option(w.name, 'xangi:' + w.id); option.title = w.path; options.push(option);
   }
   $('workspaceSelect').replaceChildren(...options);
   $('workspaceSelect').value = workspaceId;
 }
+function renderTabs() {
+  $('terminalTabs').replaceChildren(...terminalList.map((w, index) => {
+    const group = document.createElement('div'); group.className = 'terminalTab';
+    const tab = document.createElement('button'); tab.textContent = `${index + 1}: ${w.name}`;
+    tab.setAttribute('role', 'tab'); tab.setAttribute('aria-selected', String(w.id === workspaceId));
+    tab.title = w.path; tab.disabled = switching; tab.dataset.id = w.id;
+    tab.onclick = () => switchWorkspace(w.id);
+    tab.onkeydown = e => {
+      if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
+      e.preventDefault();
+      const target = e.key === 'Home' ? 0 : e.key === 'End' ? terminalList.length - 1 : (index + (e.key === 'ArrowLeft' ? -1 : 1) + terminalList.length) % terminalList.length;
+      $('terminalTabs').querySelectorAll('[role=tab]')[target].focus();
+    };
+    const close = document.createElement('button'); close.textContent = '×'; close.className = 'closeTab';
+    close.setAttribute('aria-label', `${index + 1}: ${w.name} を閉じる`); close.disabled = switching;
+    close.onclick = () => closeTab(w.id);
+    group.append(tab, close); return group;
+  }));
+  $('newTerminal').disabled = switching || terminalList.length >= 8;
+  $('terminalTabs').querySelector('[aria-selected=true]')?.scrollIntoView({block:'nearest', inline:'nearest'});
+}
+$('newTerminal').onclick = async () => {
+  if (switching) return;
+  $('newTerminal').disabled = true;
+  try { const result = await (await api('terminal/new', {workspace:workspaceId})).json(); await switchWorkspace(result.added); }
+  catch (e) { error(e); }
+  finally { renderTabs(); }
+};
+async function closeTab(id) {
+  if (switching) return;
+  if (!confirm('このターミナルを閉じますか？実行中の処理も終了します。')) return;
+  try {
+    const result = await (await api('terminal/close', {id})).json();
+    if (id === workspaceId) await switchWorkspace(result.active);
+    else await loadWorkspaces();
+    drafts.delete(id);
+  } catch (e) { error(e); }
+}
 async function switchWorkspace(id) {
   if (switching) return;
-  switching = true; $('workspaceSelect').disabled = true; invalidate();
+  switching = true; $('workspaceSelect').disabled = true; renderTabs(); invalidate();
+  drafts.set(workspaceId, { input: $('input').value, command: $('commandInput').value });
   connected = false; controls();
   const previous = workspaceId;
   try {
@@ -160,12 +202,14 @@ async function switchWorkspace(id) {
     await api('workspace/select', { id });
     workspaceId = id; workspaceVersion++;
     const old = socket; socket = null; old?.close();
-    $('input').value = ''; $('commandInput').value = ''; $('status').textContent = '';
+    const draft = drafts.get(id);
+    $('input').value = draft?.input || ''; $('commandInput').value = draft?.command || ''; $('status').textContent = '';
+    $('cwd').textContent = ''; error();
     $('gitDialog').close(); $('gitOpen').textContent = 'Git確認中…';
     $('gitFiles').textContent = ''; $('gitDiff').textContent = ''; $('gitStagedDiff').textContent = '';
     await loadWorkspaces(); connect(); refreshGit();
   } catch (e) { error(e); $('workspaceSelect').value = previous; connected = socket?.readyState === WebSocket.OPEN; controls(); }
-  finally { switching = false; $('workspaceSelect').disabled = false; }
+  finally { switching = false; $('workspaceSelect').disabled = false; renderTabs(); }
 }
 async function refreshGit() {
   if (gitBusy || switching || $('workspace').hidden) return;

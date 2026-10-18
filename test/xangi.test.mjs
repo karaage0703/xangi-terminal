@@ -56,8 +56,8 @@ test('natural conversion sends no-environment-check task independently from prev
   if(url.pathname==='/api/agent-runs'){task=JSON.parse(options.body).task;return Response.json({run:{id:'r'}});}
   return Response.json({run:{status:'succeeded',result:JSON.stringify({command:'pwd',explanation:'cwd',simulation:'',effects:'表示',evidence:'',status:'predicted',reason:'候補のみ',checks:[]})}});
  }});
- await bridge.suggest('codex','m',{mode:'natural',text:'今の場所',cwd:'/tmp'},{});
- assert.match(task,/ツール呼び出し・環境調査・コマンド実行はしない/);assert.doesNotMatch(task,/候補全体をツール実行/);
+ await bridge.suggest('codex','m',{mode:'natural',text:'今の場所',cwd:'/tmp',os:'macOS'},{});
+ assert.doesNotMatch(task,/Linux/);assert.match(task,/macOS/);assert.match(task,/ツール呼び出し・環境調査・コマンド実行はしない/);assert.doesNotMatch(task,/候補全体をツール実行/);
 });
 
 test('AI workspace remains fixed across unrelated execution directories',async()=>{

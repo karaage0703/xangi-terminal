@@ -3,7 +3,7 @@
   "id": "xangi-terminal",
   "displayName": "xangi-terminal",
   "description": "自然言語とシェルで操作するターミナルを開く",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "entrypoint": "scripts/xangi-extension",
   "runtime": {
     "kind": "managed-http"

@@ -1,19 +1,25 @@
 import pty from 'node-pty';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer, WebSocket } from 'ws';
-import { realpath } from 'node:fs/promises';
+import { processDirectory } from './platform.mjs';
 
 export const activeWorkspace = session => session.workspaces ? session.workspaces.get(session.activeWorkspace) : session;
 export async function currentDirectory(session) {
   session = activeWorkspace(session);
   if (session.terminal) {
-    try { session.cwd = await realpath(`/proc/${session.terminal.pid}/cwd`); } catch { /* Shell may just have exited. */ }
+    const terminal = session.terminal;
+    try {
+      const cwd = await processDirectory(terminal.pid);
+      if (session.terminal !== terminal) throw Error('Shell changed');
+      session.cwd = cwd;
+    } catch {
+      throw Object.assign(Error('作業フォルダを確認できません。ターミナルへ再接続してください。'), { status: 503 });
+    }
   }
   return session.cwd;
 }
 export function closeTerminal(session) {
   if (session.workspaces) { for (const workspace of session.workspaces.values()) closeTerminal(workspace); return; }
-  clearTimeout(session.disconnectTimer);
   clearInterval(session.cwdTimer);
   session.socket?.close(4000, 'Session ended');
   session.socket = null;
@@ -28,7 +34,12 @@ export function attachTerminals(server, sessions, config) {
     ws.send(JSON.stringify(message));
   };
   const publishCwd = async session => {
-    const cwd = await currentDirectory(session);
+    if (session.checkingCwd) return;
+    session.checkingCwd = true;
+    let cwd;
+    try { cwd = await currentDirectory(session); }
+    catch { return; } // APIs reject stale paths; polling may recover on its next tick.
+    finally { session.checkingCwd = false; }
     if (session.lastCwd !== cwd) { session.lastCwd = cwd; send(session, { type: 'cwd', cwd }); }
   };
   const start = session => {
@@ -36,14 +47,14 @@ export function attachTerminals(server, sessions, config) {
     const shell = pty.spawn('/bin/bash', ['--noprofile', '--rcfile', fileURLToPath(new URL('./shell.bash', import.meta.url)), '-i'], {
       name: 'xterm-256color', cols: 80, rows: 24, cwd: session.cwd,
       env: { PATH: process.env.PATH || '/usr/bin:/bin', HOME: process.env.HOME || session.cwd,
-        LANG: 'C.UTF-8', TERM: 'xterm-256color', PS1: '\\u@\\h:\\w\\$ ', HISTFILE: '/dev/null' }
+        LANG: process.platform === 'darwin' ? 'en_US.UTF-8' : 'C.UTF-8', TERM: 'xterm-256color', PS1: '\\u@\\h:\\w\\$ ', HISTFILE: '/dev/null' }
     });
     session.terminal = shell;
     const cwdTimer = setInterval(() => publishCwd(session), 1000);
     session.cwdTimer = cwdTimer; cwdTimer.unref();
     shell.onData(data => {
       session.history = (session.history + data).slice(-262144);
-      if (!session.socket) { shell.pause(); return; }
+      if (!session.socket) return; // Drain background output into the bounded replay buffer.
       session.unacked += data.length;
       send(session, { type: 'data', data });
       if (session.unacked > 131072) shell.pause();
@@ -67,7 +78,6 @@ export function attachTerminals(server, sessions, config) {
     }
     wss.handleUpgrade(req, socket, head, ws => {
       session.socket?.close(4001, 'Opened in another tab');
-      clearTimeout(session.disconnectTimer);
       session.socket = ws; session.unacked = 0; session.lastCwd = null;
       ws.on('error', () => {});
       try { if (!session.terminal) start(session); } catch { ws.close(1011, 'Cannot start shell'); return; }
@@ -94,9 +104,8 @@ export function attachTerminals(server, sessions, config) {
       ws.on('close', () => {
         if (session.socket !== ws) return;
         session.socket = null;
-        session.terminal?.pause();
-        session.disconnectTimer = setTimeout(() => closeTerminal(session), config.reconnectMs ?? 600000);
-        session.disconnectTimer.unref();
+        session.unacked = 0;
+        session.terminal?.resume(); // Switching tabs must not suspend a running command.
       });
     });
   });

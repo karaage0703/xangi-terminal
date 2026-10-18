@@ -1,13 +1,14 @@
+import { execFileSync } from 'node:child_process';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { mkdtemp, rm, access, mkdir } from 'node:fs/promises';
+import { mkdtemp, rm, access, mkdir, realpath, writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { WebSocket } from 'ws';
 import { createApp } from '../src/server.mjs';
 async function fixture(t, options = {}) {
-  const cwd = await mkdtemp(join(tmpdir(), 'xangi-terminal-'));
+  const cwd = await realpath(await mkdtemp(join(tmpdir(), 'xangi-terminal-')));
   const token = 'test-token-'.repeat(4);
   let suggestions = 0;
   if (options.xangi) options = {...options, xangi:{defaultBackend:async()=>({id:'xangi:codex',model:'fixture-model'}),...options.xangi}};
@@ -45,7 +46,7 @@ test('direct execution needs no AI or confirmation; cd and export persist',async
  c.send("export TERMINAL_VALUE='persistent'; cd /tmp\r");
  c.send("printf '\\n%s\\n' \"$TERMINAL_VALUE\"; pwd\r");
  await c.wait(o=>o.includes('\r\npersistent\r\n/tmp\r\n'));
- assert.equal(f.suggestions(),0);assert.equal((await(await f.request('info')).json()).cwd,'/tmp');
+ assert.equal(f.suggestions(),0);assert.equal((await(await f.request('info')).json()).cwd,await realpath('/tmp'));
 });
 test('PTY supports interactive input, resize, Ctrl+C and command history',async t=>{
  const f=await fixture(t);await f.login();const c=await f.connect();
@@ -72,11 +73,11 @@ test('Tailnet identity is opt-in and restricted to configured owner',async t=>{
  assert.equal((await f.request('login',{}, {'Tailscale-User-Login':'owner@example.test'})).status,200);
  const plain=await fixture(t);assert.equal((await plain.request('login',{}, {'Tailscale-User-Login':'owner@example.test'})).status,401);
 });
-test('disconnect grace expiry destroys the old shell',async t=>{
+test('disconnect retains the shell until explicitly closed or session expiry',async t=>{
  const f=await fixture(t,{reconnectMs:40});await f.login();const c=await f.connect();
  c.send("export OLD_SHELL=yes; printf '\\nSAVED\\n'\r");await c.wait(o=>o.includes('\r\nSAVED\r\n'));
  await new Promise(r=>{c.ws.once('close',r);c.ws.close();});await new Promise(r=>setTimeout(r,120));
- const next=await f.connect();next.send('printf "\\nOLD:%s\\n" "$OLD_SHELL"\r');await next.wait(o=>o.includes('\r\nOLD:\r\n'));
+ const next=await f.connect();next.send('printf "\\nOLD:%s\\n" "$OLD_SHELL"\r');await next.wait(o=>o.includes('\r\nOLD:yes\r\n'));
 });
 test('unknown or out-of-range WebSocket messages close the connection',async t=>{
  const f=await fixture(t);await f.login();const c=await f.connect();
@@ -124,7 +125,7 @@ test('xangi workspace imports require authentication and registered IDs; chat en
  assert.equal((await f.request('xangi/workspace',{id:'missing',path:'/'})).status,404);
  const imported=await(await f.request('xangi/workspace',{id:'registered'})).json();
  await f.request('workspace/select',{id:imported.added});
- assert.equal((await(await f.request('info')).json()).cwd,'/tmp');
+ assert.equal((await(await f.request('info')).json()).cwd,await realpath('/tmp'));
  for(const endpoint of ['xangi/send','xangi/status'])assert.equal((await f.request(endpoint,{agentId:'anything',message:'ignored'})).status,404);
 });
 test('xangi disabled does not affect direct shell APIs',async t=>{const f=await fixture(t);await f.login();assert.equal((await f.request('xangi/catalog')).status,503);assert.equal((await f.request('info')).status,200);});
@@ -139,7 +140,7 @@ test('login uses the configured xangi default, not the first entry or fallback C
  const f=await fixture(t,{xangi:{catalog:async()=>({workspaces:[{id:'default',name:'別の場所',path:'/'},{id:'chosen',name:'既定の場所',path:root,isDefault:true}]})}});
  await f.login();
  const info=await(await f.request('workspaces')).json();
- assert.equal(info.workspaces[0].path,'/tmp');assert.equal(info.workspaces[0].name,'既定の場所');
+ assert.equal(info.workspaces[0].path,await realpath('/tmp'));assert.equal(info.workspaces[0].name,'既定の場所');
  const c=await f.connect();c.send('pwd\r');await c.wait(o=>o.includes('/tmp'));c.ws.close();
  root='/';await f.login();
  assert.equal((await(await f.request('workspaces')).json()).workspaces[0].path,'/');
@@ -177,8 +178,8 @@ test('agent selection rejects AI overrides and keeps execution directory',async 
  assert.equal((await f.request('backend/select',{id:'xangi:b',effort:'high'})).status,400);
  assert.equal((await f.request('backend/select',{id:'xangi:missing'})).status,404);
  assert.equal((await f.request('backend/select',{id:'xangi:b'})).status,200);
- await f.request('suggest',{mode:'command',text:'pwd'});assert.deepEqual(calls,[['b','','/tmp']]);
- assert.equal((await(await f.request('info')).json()).cwd,'/tmp');
+ await f.request('suggest',{mode:'command',text:'pwd'});assert.deepEqual(calls,[['b','',await realpath('/tmp')]]);
+ assert.equal((await(await f.request('info')).json()).cwd,await realpath('/tmp'));
 });
 
 test('unconfigured AI explains setup while the terminal remains usable', async t => {
@@ -211,4 +212,47 @@ test('ls colors directory output in PTY but not through a pipe',async t=>{
  c.send('ls\r');await c.wait(o=>/\x1b\[[0-9;]+mcolored-directory/.test(o));
  c.send('printf "\\nPIPE_BEGIN\\n"; ls | cat; printf "PIPE_END\\n"\r');
  await c.wait(o=>o.includes('\r\nPIPE_BEGIN\r\ncolored-directory\r\nPIPE_END\r\n'));
+});
+
+test('cd updates WebSocket, Git and AI target together for paths with spaces and Unicode', async t => {
+ const inputs=[];
+ const f=await fixture(t,{xangi:{catalog:async()=>({workspaces:[{path:'/tmp',isDefault:true}]}),suggest:async(a,m,input)=>{inputs.push(input);return {command:input.text,explanation:'x',simulation:'x',effects:'x'};}}});
+ const target=join(f.cwd,'日本語 project');await mkdir(target);
+ execFileSync('git',['init','--quiet',target]);await writeFile(join(target,'new.txt'),'test');
+ await f.login();const c=await f.connect();
+ c.send(`cd '${target}'; printf '\\nMOVED\\n'\r`);await c.wait(o=>o.includes('\r\nMOVED\r\n'));
+ await c.wait((_,events)=>events.some(e=>e.type==='cwd' && e.cwd===target));
+ assert.equal((await(await f.request('info')).json()).cwd,target);
+ const git=await(await f.request('git',{workspace:'default'})).json();assert.equal(git.root,target);assert.equal(git.untracked,1);
+ assert.equal((await f.request('suggest',{mode:'natural',text:'一覧'})).status,200);
+ assert.equal(inputs[0].cwd,target);assert.equal(inputs[0].os,process.platform==='darwin'?'macOS':'Linux');
+ c.send(`cd /; printf '\\nBACK_ROOT\\n'\r`);await c.wait(o=>o.includes('\r\nBACK_ROOT\r\n'));
+ assert.equal((await(await f.request('info')).json()).cwd,'/');
+});
+
+test('same-directory terminals isolate shell state, continue output while hidden, and close independently', async t => {
+ const f=await fixture(t);await f.login();const first=await f.connect();
+ first.send("export TAB_VALUE=first; printf '\\nSAVED\\n'\r");await first.wait(o=>o.includes('\r\nSAVED\r\n'));
+ const r=await f.request('terminal/new',{workspace:'default'});assert.equal(r.status,200);const secondId=(await r.json()).added;
+ await f.request('workspace/select',{id:secondId});const second=await f.connect({},secondId);
+ second.send("printf '\\nSECOND:%s\\n' \"$TAB_VALUE\"\r");await second.wait(o=>o.includes('\r\nSECOND:\r\n'));
+ // More output than the replay/flow-control limits must not block a hidden shell.
+ first.send("sleep 0.1; printf '%300000s' x; printf done > background-done\r");
+ await new Promise(r=>{first.ws.once('close',r);first.ws.close();});
+ for(let i=0;i<100;i++){try{if(await readFile(join(f.cwd,'background-done'),'utf8')==='done')break;}catch{}await new Promise(r=>setTimeout(r,20));}
+ assert.equal(await readFile(join(f.cwd,'background-done'),'utf8'),'done');
+ await f.request('workspace/select',{id:'default'});const back=await f.connect({},'default');
+ back.send("printf '\\nFIRST:%s\\n' \"$TAB_VALUE\"\r");await back.wait(o=>o.includes('\r\nFIRST:first\r\n'));
+ const closed=new Promise(r=>second.ws.once('close',r));assert.equal((await f.request('terminal/close',{id:secondId})).status,200);await closed;
+ await assert.rejects(f.connect({},secondId),/403/);
+ back.send("printf '\\nSTILL_ALIVE\\n'\r");await back.wait(o=>o.includes('\r\nSTILL_ALIVE\r\n'));
+ const last=await(await f.request('terminal/close',{id:'default'})).json();assert.equal(last.workspaces.length,1);assert.notEqual(last.active,'default');
+});
+test('terminal API enforces authentication, valid IDs and eight terminal limit',async t=>{
+ const f=await fixture(t);assert.equal((await f.request('terminal/new')).status,401);await f.login();
+ assert.equal((await f.request('terminal/new',{workspace:'missing'})).status,404);
+ assert.equal((await f.request('terminal/close',{id:'missing'})).status,404);
+ const ids=[];for(let i=0;i<7;i++)ids.push((await(await f.request('terminal/new')).json()).added);
+ assert.equal(new Set(ids).size,7);assert.equal((await f.request('terminal/new')).status,400);
+ assert.equal((await f.request('terminal/close',{id:ids[0]})).status,200);assert.equal((await f.request('terminal/new')).status,200);
 });

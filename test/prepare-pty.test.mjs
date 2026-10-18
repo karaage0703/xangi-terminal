@@ -1,0 +1,20 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtemp, mkdir, writeFile, chmod, stat, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { preparePty } from '../scripts/prepare-pty.mjs';
+test('install repairs Darwin helper permissions and leaves Linux unchanged', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'pty-permissions-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const directory = join(root, 'prebuilds/darwin-arm64');
+  await mkdir(directory, { recursive: true });
+  const helper = join(directory, 'spawn-helper');
+  await writeFile(helper, 'fixture'); await chmod(helper, 0o644);
+  await preparePty({ root, platform: 'linux', arch: 'arm64' });
+  assert.equal((await stat(helper)).mode & 0o777, 0o644);
+  await preparePty({ root, platform: 'darwin', arch: 'arm64' });
+  assert.equal((await stat(helper)).mode & 0o777, 0o755);
+  await preparePty({ root, platform: 'darwin', arch: 'arm64' });
+  assert.equal((await stat(helper)).mode & 0o777, 0o755);
+});
