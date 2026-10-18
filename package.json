@@ -1,0 +1,21 @@
+{
+  "name": "xangi-terminal",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node --env-file-if-exists=.env src/server.mjs",
+    "test": "node --test test/*.test.mjs",
+    "check": "node --check src/preferences.mjs && node --check src/backends.mjs && node --check src/xangi.mjs && node --check src/server.mjs && node --check src/terminal.mjs && node --check src/preview.mjs && node --check src/environment.mjs && node --check src/git-status.mjs && node --check public/app.js && node --check src/open.mjs && node --check src/extension.mjs",
+    "open": "node --env-file-if-exists=.env src/open.mjs"
+  },
+  "dependencies": {
+    "@xterm/addon-fit": "0.11.0",
+    "@xterm/xterm": "6.0.0",
+    "node-pty": "1.1.0",
+    "ws": "8.22.0"
+  }
+}

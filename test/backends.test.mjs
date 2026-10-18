@@ -1,0 +1,31 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import http from 'node:http';
+import { createApp } from '../src/server.mjs';
+import { configuredBackends } from '../src/backends.mjs';
+test('backend selection routes conversion/explanation to the selected endpoint, keeps credentials private and shares selection across sessions',async t=>{
+ const calls=[];
+ const upstream=http.createServer(async(req,res)=>{let body='';for await(const c of req)body+=c;const data=JSON.parse(body);calls.push({url:req.url,auth:req.headers.authorization,body:data});const input=JSON.parse(data.messages[1].content);res.setHeader('Content-Type','application/json');res.end(JSON.stringify({choices:[{message:{content:JSON.stringify({command:input.mode==='command'?input.text:'echo example',explanation:'説明',simulation:'example',effects:'表示'})}}]}));});
+ await new Promise(r=>upstream.listen(0,'127.0.0.1',r));
+ const url=`http://127.0.0.1:${upstream.address().port}`;
+ const server=createApp({token:'test'.repeat(10),cwd:'/tmp',backends:[{id:'a',name:'A',llmUrl:url+'/a',model:'model-a',apiKey:'secret-a'},{id:'b',name:'B',llmUrl:url+'/b',model:'model-b',apiKey:'secret-b'}]});
+ await new Promise(r=>server.listen(0,'127.0.0.1',r));
+ t.after(()=>{server.shutdownTerminals();server.closeAllConnections();server.close();upstream.closeAllConnections();upstream.close();});
+ const origin=`http://127.0.0.1:${server.address().port}`;
+ const request=(cookie,path,data={})=>fetch(origin+'/api/'+path,{method:'POST',headers:{Origin:origin,Cookie:cookie,'Content-Type':'application/json'},body:JSON.stringify(data)});
+ assert.equal((await request('','backends')).status,401);
+ const login=async()=> (await request('','login',{token:'test'.repeat(10)})).headers.get('set-cookie').split(';')[0];
+ const one=await login(),two=await login();
+ assert.equal((await(await request(one,'backends')).text()).includes('secret'),false);
+ await request(one,'suggest',{text:'test',backend:'a'});
+ await request(one,'backend/select',{id:'b'});
+ assert.equal((await request(one,'backend/select',{id:'https://evil.test'})).status,404);
+ assert.equal((await request(one,'suggest',{text:'stale',backend:'a'})).status,409);
+ await request(one,'suggest',{text:'echo hello',mode:'command',backend:'b'});
+ assert.deepEqual(calls.map(c=>[c.url,c.auth,c.body.model]),[['/a/chat/completions','Bearer secret-a','model-a'],['/b/chat/completions','Bearer secret-b','model-b']]);
+ assert.equal((await(await request(two,'backends')).json()).active,'b');
+});
+test('backend configuration rejects duplicates and credential-bearing URLs',()=>{
+ assert.throws(()=>configuredBackends({backends:[]}));
+ assert.throws(()=>configuredBackends({backends:[{id:'a',name:'A',model:'m',llmUrl:'http://user:secret@host'}]}));
+});
