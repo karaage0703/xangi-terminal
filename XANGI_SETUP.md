@@ -2,7 +2,9 @@
 
 ## 前提
 
-Linux、Node.js 22以上、bashが必要です。node-ptyのネイティブビルドにC++ビルドツールが必要になる場合があります。xangi拡張として利用するときは、同じ端末でxangiを起動しておきます。
+LinuxまたはmacOS、Node.js 22以上、bashが必要です。node-ptyのネイティブビルドにC++ビルドツールが必要になる場合があります。xangi拡張として利用するときは、同じ端末でxangiを起動しておきます。macOSでは標準の`/bin/bash`と`/usr/sbin/lsof`を使います。node-ptyのビルドに必要な場合はCommand Line Tools（`xcode-select --install`）を導入してください。
+
+macOSでは`npm ci`のpostinstallでnode-pty 1.1.0付属のspawn-helperに実行権限を付けます。インストールスクリプトを無効化した場合は、`node scripts/prepare-pty.mjs`を実行してから起動してください。sudoは不要です。
 
 ターミナルサーバーと拡張の接続窓口は別プロセスです。サーバーを先に起動し、同じcheckoutの拡張を登録します。既存のサーバーや設定がある場合は再利用し、二重起動や.envの上書きを避けてください。
 

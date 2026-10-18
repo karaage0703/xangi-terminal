@@ -11,4 +11,7 @@ PROMPT_COMMAND=__xt_prompt
 PS2='… '
 
 # Color only when stdout is a terminal; redirected/piped output stays plain.
-alias ls='ls --color=auto'
+case "$OSTYPE" in
+  darwin*) alias ls='ls -G' ;;
+  *) alias ls='ls --color=auto' ;;
+esac
