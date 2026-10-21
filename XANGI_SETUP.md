@@ -6,7 +6,7 @@ LinuxまたはmacOS、Node.js 22以上、bashが必要です。node-ptyのネイ
 
 macOSでは`npm ci`のpostinstallでnode-pty 1.1.0付属のspawn-helperに実行権限を付けます。インストールスクリプトを無効化した場合は、`node scripts/prepare-pty.mjs`を実行してから起動してください。sudoは不要です。
 
-ターミナルサーバーと拡張の接続窓口は別プロセスです。サーバーを先に起動し、同じcheckoutの拡張を登録します。既存のサーバーや設定がある場合は再利用し、二重起動や.envの上書きを避けてください。
+拡張モードでは、xangiがターミナルを起動し、本体と同じポートで画面・API・WebSocketを中継します。別途 `npm start` を起動する必要はありません。内部ポートはloopbackへ自動割当されます。この方式にはWebSocket中継対応版のxangiが必要です。既存の単独サーバーを自動停止したり、.envを上書きしたりしません。
 
 ## サーバーの準備と起動
 
@@ -20,9 +20,9 @@ cp .env.example .env
 
 `.env`を環境に合わせて設定します。
 
-- `HOST`: 既定は`127.0.0.1`。
-- `PORT`: 既定は`18920`。既存サービスとの重複を確認します。
-- `ORIGIN`: ブラウザから使うURL。ローカルなら`http://127.0.0.1:18920`。リバースプロキシを使う場合は、そのURLと完全一致させます。
+- `HOST`（単独起動のみ）: 既定は`127.0.0.1`。
+- `PORT`（単独起動のみ）: 既定は`18920`。既存サービスとの重複を確認します。
+- `ORIGIN`（単独起動のみ）: ブラウザから使うURL。ローカルなら`http://127.0.0.1:18920`。リバースプロキシを使う場合は、そのURLと完全一致させます。
 - `XANGI_URL`: xangi Web UIの接続先。例は`http://127.0.0.1:18888`です。実際の待受先を確認してください。tool-serverのURLではありません。
 - `XANGI_TOKEN`: xangi側がBearer認証を要求する場合だけ設定します。
 
@@ -45,6 +45,8 @@ xangi tool workspace --action create --name xangi-terminal --path "$HOME/xangi-w
 
 専用フォルダに置くのはAIの指示です。画面の作業フォルダ切替や`cd`はコマンドの実行対象だけを変え、AI起動先を変えません。AIの事前確認も依頼JSONの`cwd`を明示して実行します。
 
+単独利用の場合だけ起動します。拡張として使う場合は次の登録へ進みます。
+
 ```sh
 npm start
 ```
@@ -61,17 +63,15 @@ xangi extension start xangi-terminal
 xangi extension status xangi-terminal
 ```
 
-`/absolute/path/to/xangi-terminal`は実際のcheckoutに置き換えます。拡張はそのcheckoutの`.env`を読み、同じ端末のterminalへloopbackで接続します。ターミナルのキーは`TERMINAL_TOKEN`または同じcheckoutの`.runtime/access-token`を使います。
+`/absolute/path/to/xangi-terminal`は実際のcheckoutに置き換えます。拡張はそのcheckoutの`.env`を読みます。`XANGI_URL`が未設定なら本体から渡された接続先を使用します。`HOST`・`PORT`・`ORIGIN`・`TERMINAL_TOKEN`は拡張モードでは使いません。
 
-xangiの拡張一覧から「開く」を押します。認証された拡張の接続窓口が60秒・一度限りのリンクを発行し、ターミナルへ自動接続します。ヘッダーの「xangiホーム」で元のホームに戻れます。拡張の停止・再起動だけでは、別途起動したターミナルサーバーは停止・再起動しません。
+xangiの拡張一覧から「開く」を押すと、本体配下の `/api/extensions/xangi-terminal/service/` へ接続します。内部トークンはブラウザへ渡さず、セッションCookieは拡張専用パスに保存します。「xangiホーム」で元のホームに戻れます。拡張停止時はその拡張が起動したPTYも終了します。
 
 ## ブラウザからの接続
 
-スマホ・別PCでは、ブラウザから到達できるterminalのURLを`ORIGIN`へ設定します。TailnetのHTTPSリバースプロキシを使う場合はHost・WebSocketを転送してください。xangiの拡張入口にアクセスできる利用者がterminalにも接続できるため、xangi側の公開範囲で利用者を制限します。
+拡張モードではスマホ・別PCもxangi本体のURLだけを使います。本体へアクセスできる利用者がterminalを操作できるため、本体の公開範囲を制限してください。HTTPSプロキシを使う場合は本体へのWebSocket転送も有効にします。
 
-Tailscale本人自動認証も使う場合は`TRUSTED_TAILSCALE_LOGIN`を設定します。認証の前提は[接続と権限](docs/usage.md#接続と権限)を参照してください。
-
-単独でローカル利用する場合は、別のターミナルで同じcheckoutから`npm run open`を実行します。一度限りのリンクをOSのブラウザで開きます。別PCからは`ssh -L 18920:127.0.0.1:18920 user@server`での接続も可能です。
+単独利用は従来どおり `npm start` と `npm run open` を使います。別端末用の `ORIGIN`、本人自動認証の `TRUSTED_TAILSCALE_LOGIN`、一度限りのリンクは単独モードの設定です。詳しくは[接続と権限](docs/usage.md#接続と権限)を参照してください。
 
 ## 導入後の確認
 

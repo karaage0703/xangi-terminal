@@ -48,6 +48,12 @@ export function createApp(config) {
     res.setHeader('Content-Security-Policy', "default-src 'self'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
     res.setHeader('Referrer-Policy', 'no-referrer');
     try {
+      if (config.managedToken && !equal(req.headers.authorization || '', `Bearer ${config.managedToken}`)) throw fail(401, '認証が必要です。');
+      if (config.managedToken && req.method === 'GET' && req.url === '/health') { json(res, 200, { ok: true }); return; }
+      if (config.managedToken && req.method === 'GET' && req.url === '/ui') {
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.end('<!doctype html><html lang="ja"><head><title>xangi-terminal</title></head><body><p>ターミナルへ接続中…</p><script>location.replace(new URL("./service/", location.href).href)</script></body></html>'); return;
+      }
       const origin = config.origin || `http://${config.host || '127.0.0.1'}:${server.address().port}`;
       res.setHeader('Content-Security-Policy', `default-src 'self'; connect-src 'self' ${origin.replace(/^http/, 'ws')}; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`);
       if (req.headers.host !== new URL(origin).host) throw fail(403, '接続先が一致しません。');
@@ -79,7 +85,7 @@ export function createApp(config) {
         const tailnetOwner = config.tailnetLogin && ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(ip) && req.headers['tailscale-user-login'] === config.tailnetLogin;
         const launchValid = typeof data.launch === 'string' && (launchTickets.get(data.launch) || 0) > now;
         if (launchValid) launchTickets.delete(data.launch);
-        if (!tailnetOwner && !launchValid && (typeof data.token !== 'string' || !equal(data.token, config.token))) throw fail(401, '接続キーが違います。');
+        if (!config.managedToken && !tailnetOwner && !launchValid && (typeof data.token !== 'string' || !equal(data.token, config.token))) throw fail(401, '接続キーが違います。');
         if (sessions.size >= 100) throw fail(429, '接続数の上限です。');
         let initialRoot = config.cwd, initialName = '最初の作業場所';
         if (xangi) {

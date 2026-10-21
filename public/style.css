@@ -78,3 +78,10 @@ body.connected{height:var(--app-height,100dvh);display:flex;flex-direction:colum
 /* Align navigation with the centered content and its responsive gutters. */
 body.connected header{padding-inline:max(24px,calc((100% - 1360px)/2 + 24px))}
 @media(max-width:800px){body.connected header{padding-inline:12px}}
+
+/* Six touch controls fit on one row on small phones. */
+@media(max-width:800px){.terminalKeys{gap:4px}section.terminal .terminalKeys button{padding-inline:6px}}
+#pasteDialog{width:min(480px,94vw)}
+#pasteError{color:var(--error)}
+#pasteError:empty{display:none}
+@media(max-width:350px){.terminalKeys{gap:3px}}
