@@ -73,7 +73,7 @@ export function attachTerminals(server, sessions, config) {
     const owner = sessions.get(sid);
     const url = new URL(req.url, origin);
     const session = owner && (url.searchParams.has('workspace') ? owner.workspaces?.get(url.searchParams.get('workspace')) : activeWorkspace(owner));
-    if (url.pathname !== '/api/terminal' || req.headers.host !== new URL(origin).host || req.headers.origin !== origin || !session || session.expires < Date.now()) {
+    if ((config.managedToken && req.headers.authorization !== `Bearer ${config.managedToken}`) || url.pathname !== '/api/terminal' || req.headers.host !== new URL(origin).host || req.headers.origin !== origin || !session || session.expires < Date.now()) {
       socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n'); return;
     }
     wss.handleUpgrade(req, socket, head, ws => {

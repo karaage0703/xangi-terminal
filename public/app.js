@@ -15,18 +15,18 @@ $('showExplanation').onchange = async () => {
 function homeLink(value) {
   try { const url = new URL(value); if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.pathname !== '/' || url.search || url.hash) return; $('xangiHome').href = url.href; $('xangiHome').hidden = false; remember('terminal-xangi-home', url.href); } catch {}
 }
-homeLink(stored('terminal-xangi-home'));
+homeLink(location.pathname.startsWith('/api/extensions/xangi-terminal/service/') ? location.origin + '/' : stored('terminal-xangi-home'));
 const drafts = new Map();
 let terminalList = [];
 let workspaceId = 'default', workspaceVersion = 0, switching = false, gitBusy = false;
 async function api(path, data = {}) {
-  const response = await fetch('/api/' + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+  const response = await fetch(new URL('api/' + path, document.baseURI), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
   if (!response.ok) { const result = await response.json(); throw Error(result.error || '通信に失敗しました。'); }
   return response;
 }
 function error(e) { $($('workspace').hidden ? 'loginError' : 'error').textContent = e?.message || ''; }
 function invalidate() { revealCandidate = false; candidateExplanation = ''; renderExplanation(); revision++; clearTimeout(timer); pending = null; $('preview').hidden = true; }
-function controls() { $('execute').disabled = !connected || !$('commandInput').value.trim(); $('cancel').disabled = !connected; }
+function controls() { $('execute').disabled = !connected || !$('commandInput').value.trim(); $('cancel').disabled = !connected; $('paste').disabled = !connected || switching || pasteBusy; }
 function send(message) {
   if (socket?.readyState !== WebSocket.OPEN || !connected) { error(Error('ターミナルに再接続してください。')); return false; }
   socket.send(JSON.stringify(message)); return true;
@@ -50,7 +50,9 @@ function connect() {
     new ResizeObserver(resize).observe($('output'));
   }
   term.reset(); connected = false; controls(); $('exitStatus').textContent = '接続中…';
-  const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/api/terminal?workspace=${encodeURIComponent(workspaceId)}`); socket = ws;
+  const wsUrl = new URL(`api/terminal?workspace=${encodeURIComponent(workspaceId)}`, document.baseURI);
+  wsUrl.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const ws = new WebSocket(wsUrl); socket = ws;
   ws.onmessage = event => {
     if (socket !== ws) return;
     const message = JSON.parse(event.data);
@@ -137,6 +139,49 @@ $('clear').onclick = () => term?.clear();
 $('reconnect').onclick = connect;
 for (const button of document.querySelectorAll('[data-key]')) button.onclick = () => { if (send({ type: 'input', data: JSON.parse(button.dataset.key) })) term.focus(); };
 
+// Keep clipboard text out of the PTY until the target and single-line input are checked.
+let pasteBusy = false, pasteTarget = null;
+function pasteMessage(text) { $('pasteError').textContent = text; }
+function showPaste(text = '', message = '') {
+  $('pasteInput').value = text; pasteMessage(message);
+  $('pasteDialog').showModal(); $('pasteInput').focus();
+}
+function insertPaste(text) {
+  if (!connected || switching || socket !== pasteTarget) {
+    showPasteError('接続先が変わりました。キャンセルして、貼付を押し直してください。'); return false;
+  }
+  // A trailing newline commonly comes from copying a command; never send Enter.
+  const value = text.replace(/[\r\n]+$/g, '');
+  if (!value) { showPasteError('貼り付ける文字がありません。'); return false; }
+  if (/[\x00-\x1f\x7f-\x9f\u2028\u2029]/u.test(value)) {
+    showPasteError('改行・タブ・制御文字は挿入できません。1行に編集するか「自然言語・コマンド」欄を使ってください。'); return false;
+  }
+  if (value.length > 16000) { showPasteError('文字が多すぎます。16,000文字以内にしてください。'); return false; }
+  term.paste(value); $('pasteInput').value = ''; term.focus(); return true;
+}
+function showPasteError(message) {
+  if (!$('pasteDialog').open) showPaste($('pasteInput').value, message);
+  else pasteMessage(message);
+}
+$('paste').onclick = async () => {
+  if (!connected || switching || pasteBusy) return;
+  pasteTarget = socket; pasteBusy = true; controls();
+  try {
+    let text;
+    try {
+      if (!navigator.clipboard?.readText) { showPaste(); return; }
+      text = await navigator.clipboard.readText();
+    } catch { showPaste('', '直接読み取れませんでした。この欄に貼り付けてください。'); return; }
+    $('pasteInput').value = text;
+    insertPaste(text);
+  } finally { pasteBusy = false; controls(); }
+};
+$('pasteInsert').onclick = () => {
+  if (insertPaste($('pasteInput').value)) $('pasteDialog').close();
+};
+$('pasteClose').onclick = () => $('pasteDialog').close();
+$('pasteDialog').addEventListener('close', () => { $('pasteInput').value = ''; pasteMessage(''); pasteTarget = null; $('paste').focus(); });
+
 async function loadWorkspaces() {
   const result = await (await api('workspaces')).json(); workspaceId = result.active;
   let registered = [];
@@ -209,7 +254,7 @@ async function switchWorkspace(id) {
     $('gitFiles').textContent = ''; $('gitDiff').textContent = ''; $('gitStagedDiff').textContent = '';
     await loadWorkspaces(); connect(); refreshGit();
   } catch (e) { error(e); $('workspaceSelect').value = previous; connected = socket?.readyState === WebSocket.OPEN; controls(); }
-  finally { switching = false; $('workspaceSelect').disabled = false; renderTabs(); }
+  finally { switching = false; $('workspaceSelect').disabled = false; renderTabs(); controls(); }
 }
 async function refreshGit() {
   if (gitBusy || switching || $('workspace').hidden) return;

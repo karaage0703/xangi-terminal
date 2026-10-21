@@ -1,5 +1,6 @@
 import http from 'node:http';
-import { readFile } from 'node:fs/promises';
+import { mkdir, realpath } from 'node:fs/promises';
+import { createApp } from './server.mjs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 export function launchTicket(origin, token, port) {
@@ -34,12 +35,21 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   if (process.argv[2] !== 'serve') throw Error('Use xangi extension start xangi-terminal');
   const at = process.argv.indexOf('--workspace');
   const workspace = resolve(at >= 0 ? process.argv[at + 1] : process.cwd());
-  const origin = process.env.ORIGIN || `http://127.0.0.1:${process.env.PORT || 18920}`;
-  const server = createLauncher(process.env.XANGI_EXTENSION_AUTH_TOKEN, origin, async () => {
-    const token = process.env.TERMINAL_TOKEN || (await readFile(new URL('../.runtime/access-token', import.meta.url), 'utf8')).trim();
-    return launchTicket(origin, token, Number(process.env.PORT || 18920));
+  const token = process.env.XANGI_EXTENSION_AUTH_TOKEN;
+  if (!token) throw Error('Extension token is required');
+  const stateDir = resolve(fileURLToPath(new URL('../.runtime', import.meta.url)));
+  await mkdir(stateDir, { recursive: true, mode: 0o700 });
+  const server = createApp({
+    token, managedToken: token, host: '127.0.0.1',
+    preferencesPath: resolve(stateDir, 'preferences.json'),
+    cwd: await realpath(process.env.CWD || workspace),
+    xangiUrl: process.env.XANGI_URL || process.env.XANGI_EXTENSION_HOST_URL, xangiToken: process.env.XANGI_TOKEN,
+    backends: process.env.LLM_BACKENDS_JSON ? JSON.parse(process.env.LLM_BACKENDS_JSON) : undefined,
+    llmUrl: process.env.LLM_BASE_URL || 'http://127.0.0.1:8001/v1',
+    model: process.env.LLM_MODEL, apiKey: process.env.LLM_API_KEY,
+    disableThinking: process.env.LLM_DISABLE_THINKING === 'true',
   });
   server.listen(0, '127.0.0.1', () => console.log(JSON.stringify({schemaVersion:2,event:'ready',id:'xangi-terminal',workspace,baseUrl:`http://127.0.0.1:${server.address().port}`})));
-  const stop = () => {server.close(); server.closeAllConnections(); process.stdin.pause();};
+  const stop = () => {server.shutdownTerminals(); server.close(); server.closeAllConnections(); process.stdin.pause();};
   process.stdin.resume();process.stdin.on('end',stop);for(const s of ['SIGINT','SIGTERM'])process.on(s,stop);
 }
