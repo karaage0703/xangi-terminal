@@ -81,3 +81,9 @@ xangiの拡張一覧から「開く」を押すと、本体配下の `/api/exten
 - 「xangiホーム」で元の画面へ戻れる。
 
 日常の操作は[使い方](docs/usage.md)、構成と認証の詳細は[設計](docs/design.md)を参照してください。
+
+## 拡張の更新
+
+公開リポジトリから登録した拡張は「更新を確認」から更新できます。更新準備は `scripts/prepare-update` が`npm ci`を実行します。停止・起動・正常性確認・失敗時の復旧はxangi本体が行います。
+
+拡張モードの設定は `<DATA_DIR>/extensions/data/xangi-terminal/config.env`、エージェント選択は同じディレクトリの `preferences.json` に保存します。DATA_DIR未指定時は `<workspace>/.xangi` が基準です。旧ソース内の `.env` と `.runtime/preferences.json` は新しい版の初回起動時に、保存先にまだファイルがない場合だけコピーします。初めて更新対応版へ移行する場合はソースを置き換える前に、この2ファイルを専用データへコピーしてください。通常の更新では専用データを保持します。環境変数はconfig.envより優先します。
