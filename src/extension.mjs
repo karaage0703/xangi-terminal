@@ -1,5 +1,6 @@
+import { prepareManagedData } from './managed-data.mjs';
 import http from 'node:http';
-import { mkdir, realpath } from 'node:fs/promises';
+import { realpath } from 'node:fs/promises';
 import { createApp } from './server.mjs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -37,8 +38,8 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const workspace = resolve(at >= 0 ? process.argv[at + 1] : process.cwd());
   const token = process.env.XANGI_EXTENSION_AUTH_TOKEN;
   if (!token) throw Error('Extension token is required');
-  const stateDir = resolve(fileURLToPath(new URL('../.runtime', import.meta.url)));
-  await mkdir(stateDir, { recursive: true, mode: 0o700 });
+  const stateDir = await prepareManagedData(workspace, fileURLToPath(new URL('..', import.meta.url)));
+  try { process.loadEnvFile(resolve(stateDir, 'config.env')); } catch (error) { if (error.code !== 'ENOENT') throw error; }
   const server = createApp({
     token, managedToken: token, host: '127.0.0.1',
     preferencesPath: resolve(stateDir, 'preferences.json'),
