@@ -139,6 +139,51 @@ $('clear').onclick = () => term?.clear();
 $('reconnect').onclick = connect;
 for (const button of document.querySelectorAll('[data-key]')) button.onclick = () => { if (send({ type: 'input', data: JSON.parse(button.dataset.key) })) term.focus(); };
 
+// Snapshot only the current terminal buffer; never send copy actions to the shell.
+function outputText() {
+  const buffer = term?.buffer.active;
+  if (!buffer) return '';
+  let text = '';
+  for (let i = 0; i < buffer.length; i++) {
+    const line = buffer.getLine(i);
+    if (i && !line.isWrapped) text += '\n';
+    // Preserve spaces inside soft-wrapped lines, but remove unused terminal cells.
+    text += line.translateToString(!buffer.getLine(i + 1)?.isWrapped);
+  }
+  return text.replace(/\n+$/g, '');
+}
+let copyVersion = 0;
+$('copyOutput').onclick = () => {
+  copyVersion++;
+  const text = outputText();
+  $('copyText').value = text;
+  $('copyStatus').textContent = text ? '' : 'コピーする出力がありません。';
+  $('copyAll').disabled = !text;
+  $('copyDialog').showModal();
+  $('copyText').focus();
+};
+$('copyAll').onclick = async () => {
+  const version = copyVersion, text = $('copyText').value;
+  if (!text) return;
+  $('copyAll').disabled = true;
+  try {
+    if (!navigator.clipboard?.writeText) throw Error('Clipboard unavailable');
+    await navigator.clipboard.writeText(text);
+    if (version === copyVersion) $('copyStatus').textContent = '全文をコピーしました。';
+  } catch {
+    if (version !== copyVersion) return;
+    $('copyText').focus(); $('copyText').select();
+    $('copyStatus').textContent = '直接コピーできませんでした。文字欄を長押しして「コピー」を選んでください。';
+  } finally {
+    if (version === copyVersion) $('copyAll').disabled = false;
+  }
+};
+$('copyClose').onclick = () => $('copyDialog').close();
+$('copyDialog').addEventListener('close', () => {
+  copyVersion++; $('copyText').value = ''; $('copyStatus').textContent = '';
+  $('copyAll').disabled = true; $('copyOutput').focus();
+});
+
 // Keep clipboard text out of the PTY until the target and single-line input are checked.
 let pasteBusy = false, pasteTarget = null;
 function pasteMessage(text) { $('pasteError').textContent = text; }

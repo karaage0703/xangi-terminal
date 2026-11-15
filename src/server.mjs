@@ -45,7 +45,7 @@ export function createApp(config) {
   const sessions = new Map(), attempts = new Map(), launchTickets = new Map();
   const server = http.createServer(async (req, res) => {
     res.setHeader('Cache-Control', 'no-store'); res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('Content-Security-Policy', "default-src 'self'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
+    res.setHeader('Content-Security-Policy', `default-src 'self'; style-src 'self' 'unsafe-inline'; frame-ancestors ${config.managedToken ? "'self'" : "'none'"}; base-uri 'none'; form-action 'self'`);
     res.setHeader('Referrer-Policy', 'no-referrer');
     try {
       if (config.managedToken && !equal(req.headers.authorization || '', `Bearer ${config.managedToken}`)) throw fail(401, '認証が必要です。');
@@ -55,7 +55,7 @@ export function createApp(config) {
         res.end('<!doctype html><html lang="ja"><head><title>xangi-terminal</title></head><body><p>ターミナルへ接続中…</p><script>location.replace(new URL("./service/", location.href).href)</script></body></html>'); return;
       }
       const origin = config.origin || `http://${config.host || '127.0.0.1'}:${server.address().port}`;
-      res.setHeader('Content-Security-Policy', `default-src 'self'; connect-src 'self' ${origin.replace(/^http/, 'ws')}; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`);
+      res.setHeader('Content-Security-Policy', `default-src 'self'; connect-src 'self' ${origin.replace(/^http/, 'ws')}; style-src 'self' 'unsafe-inline'; frame-ancestors ${config.managedToken ? "'self'" : "'none'"}; base-uri 'none'; form-action 'self'`);
       if (req.headers.host !== new URL(origin).host) throw fail(403, '接続先が一致しません。');
       const path = new URL(req.url, origin).pathname;
       const assets = { '/': 'public/index.html', '/app.js': 'public/app.js', '/style.css': 'public/style.css', '/xterm.js': 'node_modules/@xterm/xterm/lib/xterm.js', '/xterm.css': 'node_modules/@xterm/xterm/css/xterm.css', '/fit.js': 'node_modules/@xterm/addon-fit/lib/addon-fit.js' };
