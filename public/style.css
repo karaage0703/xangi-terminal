@@ -85,3 +85,21 @@ body.connected header{padding-inline:max(24px,calc((100% - 1360px)/2 + 24px))}
 #pasteError{color:var(--error)}
 #pasteError:empty{display:none}
 @media(max-width:350px){.terminalKeys{gap:3px}}
+
+/* Native text selection works independently of terminal keyboard handling. */
+#copyDialog{width:min(720px,94vw)}
+#copyText{font-family:var(--mono);height:30dvh;min-height:100px;white-space:pre-wrap;user-select:text;-webkit-user-select:text}
+#copyStatus{font-size:13px;overflow-wrap:anywhere}
+#copyStatus:empty{display:none}
+@media(max-width:800px){section.terminal .terminalToolbar button{padding-inline:4px}}
+
+/* Match the xangi-tasks home shortcut on phones. */
+.home-link{gap:8px}
+.home-link svg{width:18px;height:18px;flex-shrink:0}
+@media(max-width:800px){.home-link{width:44px;padding:0;justify-content:center}.home-link span{display:none}}
+
+/* Keep terminal controls dark even when the host supplies a light appearance hint. */
+body{color-scheme:dark}
+
+/* Shared Home is provided by the host while embedded. */
+:root[data-xangi-embedded="true"] #xangiHome{display:none}
